@@ -5,7 +5,7 @@ date: "2025-10-12"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup-intial, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -34,11 +34,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 \newpage
 
-**Project Assumptions:**
-* **Data Source:** The analysis will use the provided CSV files by the assignment. For a comprehensive analysis, the PG1 and PG2 files  will be combined into two one data frames for each type of dataset (`patients`. `encounters`, `conditions`). All data files will be included in the repository.
-* **Environment:** The analysis is performed using R within an R Markdown document, which allows for reproducible research by combining code, results, and narrative.
-* **Date for Age Calculation:** As per the project context, all patient ages will be calculated relative to the date **October 13, 2025**.
-* **Column Names:** The code will use the column names as they appear in the CSV files (e.g., `Id`, `BIRTHDATE`, `COUNTY`, `PATIENT`, `DESCRIPTION`).
+> **Project Assumptions:**
+>
+> The analysis will use the provided CSV files by the assignment. For a comprehensive analysis, the PG1 and PG2 files  will be combined into two one data frames for each type of dataset (`patients`. `encounters`, `conditions`). All data files will be included in the repository.
+> The analysis is performed using R within an R Markdown document, which allows for reproducible research by combining code, results, and narrative.
+> As per the project context, all patient ages will be calculated relative to the date **October 13, 2025**.
+> The code will use the column names as they appear in the CSV files (e.g., `Id`, `BIRTHDATE`, `COUNTY`, `PATIENT`, `DESCRIPTION`).
 
 The code in this report have been ensured to run without errors. The codes are well-commented and separated into sections for clarity.
 All warning and formatting issues have been addressed to ensure a clean and professional presentation.
