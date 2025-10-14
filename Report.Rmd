@@ -151,3 +151,79 @@ The bar chart on the left shows the absolute number of patients with a COVID-19 
 The top eight counties collectively account for the vast majority of the COVID-19 cases in this dataset. This suggests that these are major hotspots. This information indicates that medical resources and public health interventions may need to be concentrated in these areas to effectively manage and contain the spread of the virus.
 
 The bar chart on the right provides a demographic snapshot of the entire patient population. The patient population is heavily skewed towards older adults. The 51+ age group is by far the largest demographic, with 6,496 patients. This is more than the other three age groups combined. This distribution strongly suggests that older adults are more likely to seek medical care or have more health issues requiring attention. There is a surprising spike when people reach the age of 51 compared to the 36-50 age group. This could be due to a variety of factors, including the onset of age-related health conditions that become more prevalent after 50 or that people are more proactive about their health as they age. This information means that more pressure may be placed on healthcare services that cater to older adults, including chronic disease management and preventive care.
+
+### **Task 2**
+1.  Identify the top 5 most common conditions for all COVID-19 patients, excluding conditions that are directly related to the COVID-19 diagnosis itself.
+2.  Investigate if these common co-occurring conditions differ by gender.
+3.  Present the top 10 conditions for male and female patients separately in a formatted table for comparison and provide an interpretation of the findings.
+
+---
+
+#### **Data preparation**
+
+For task 2, we reuse the `covid_patient_ids` vector created in Task 1 to filter the `conditions` data frame. This ensures that we are only analyzing conditions for patients who have had a COVID-19 diagnosis.
+
+The code block below uses a `dplyr` pipe to chain operations. It `filter()`s for our COVID patient cohort, then uses `filter()` with a `!` (negation) to *remove* all COVID-related diagnoses. Finally, `count()` tallies the remaining conditions, and `top_n(5)` selects the five most frequent ones. A crucial step here is the `inner_join()`, which merges the two data frames, allowing us to analyze conditions and demographics together. The logic is then repeated twice, adding a `filter()` for `GENDER == 'M'` and `GENDER == 'F'` respectively to create two separate top-10 lists.
+
+```{r analysis_task2, echo=TRUE}
+# --- Find Top 5 Most Common Conditions (Overall) ---
+top_5_conditions_overall <- conditions %>%
+  filter(PATIENT %in% covid_patient_ids) %>%
+  filter(!grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+  count(DESCRIPTION, sort = TRUE, name = "count") %>%
+  top_n(5, count)
+
+print(top_5_conditions_overall)
+
+# --- Analyze Top 10 Conditions by Gender ---
+
+conditions_with_gender <- conditions %>%
+  inner_join(patients, by = c("PATIENT" = "Id"))
+
+top_10_male <- conditions_with_gender %>%
+  filter(PATIENT %in% covid_patient_ids, GENDER == 'M') %>%
+  filter(!grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+  count(DESCRIPTION, sort = TRUE, name = "count") %>%
+  head(10)
+
+top_10_female <- conditions_with_gender %>%
+  filter(PATIENT %in% covid_patient_ids, GENDER == 'F') %>%
+  filter(!grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+  count(DESCRIPTION, sort = TRUE, name = "count") %>%
+  head(10)
+```
+
+The code block above prints the overall top 5 health issues experienced by COVID-19 patients in this dataset. Fever is the most common condition with a count of 8083, followed by Cough, Loss of taste, Fatigue, and obesity with a body mass index over 30. Identifying these conditions is crucial for patient management, as it points to which other conditions doctors should monitor closely in a COVID-19 patient.
+
+#### **Visualization**
+
+The next code block produces a side-by-side comparison of the top 10 conditions for male and female patients.
+
+The data are first prepared by renaming columns for clarity. The `cbind()` function is then used to combine the two data frames into one for side-by-side comparison. Finally, `kbl()` and `kable_styling()` are used to format the table with a caption and styling options.
+
+```{r kable_table, echo=TRUE}
+# --- Present the Gender Comparison in a Table ---
+
+male_table_data <-
+  top_10_male %>% rename(`Male Condition` = DESCRIPTION, `M_Count` = count)
+female_table_data <-
+  top_10_female %>% rename(`Female Condition` = DESCRIPTION, `F_Count` = count)
+
+comparison_table <- cbind(male_table_data, female_table_data)
+
+comparison_table %>%
+  kbl(caption = "Top 10 Most Common Non-COVID
+   Conditions in COVID-19 Patients by Gender") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) %>%
+  add_header_above(c("Male Patients" = 2, "Female Patients" = 2))
+```
+
+According to the table above, eight of the top 10 conditions are shared between male and female patients. Classic viral symptoms such as Fever, Cough, Loss of taste, and Fatigue rank in the top 5 for both genders. This is consistent with the well-documented presentation of COVID-19 and confirms the symptomatic overlap between men and women.
+
+The presence of Obesity (BMI 30+), Prediabetes, and Hypertension on both lists is highly significant. These conditions are widely recognized as major risk factors that increase the likelihood of severe complications from COVID-19. Their high frequency underscores the role of metabolic and cardiovascular health in disease outcomes for all patients.
+
+For male, the unique conditions points towards severe respiratory issues. The appearance of Hypoxemia, or low blood oxygen levels, is a direct indicator of this concern. While anemia can be associated with chronic inflammation and more sever systemic illness, it may reflect that men were experiencing an inflammatory response to COVID-19.
+
+For female, the unique conditions points towards pregnancy-related issues. The high pressence of miscarriage is alraming. This finding emphasizes the need for special care and monitoring of pregnant patients with COVID-19, as they may face unique risks and complications.
+However, there is also the presence of normal pregnancy, which suggests that not all pregnant patiens with COVID-19 experience adverse outcomes, and that the dataset highlight that pregnant women are more likely to contracts COVID-19 compared to other demographics.
