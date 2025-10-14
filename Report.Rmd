@@ -33,3 +33,120 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 \newpage
+
+**Project Assumptions:**
+* **Data Source:** The analysis will use the provided CSV files by the assignment. For a comprehensive analysis, the PG1 and PG2 files  will be combined into two one data frames for each type of dataset (`patients`. `encounters`, `conditions`). All data files will be included in the repository.
+* **Environment:** The analysis is performed using R within an R Markdown document, which allows for reproducible research by combining code, results, and narrative.
+* **Date for Age Calculation:** As per the project context, all patient ages will be calculated relative to the date **October 13, 2025**.
+* **Column Names:** The code will use the column names as they appear in the CSV files (e.g., `Id`, `BIRTHDATE`, `COUNTY`, `PATIENT`, `DESCRIPTION`).
+
+The code in this report have been ensured to run without errors. The codes are well-commented and separated into sections for clarity.
+All warning and formatting issues have been addressed to ensure a clean and professional presentation.
+
+We first needs to loads all packages required for the assignment, including data manipulation, date calculations, and plot arrangement, and other utilities.
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(patchwork)
+library(kableExtra)
+```
+
+### **Task 1**
+
+The goal is to analyze and visualize the distribution of patients based on two criteria:
+1.  The geographic distribution of patients diagnosed with COVID-19 (confirmed or suspected) across different counties.
+2.  The demographic distribution of the entire patient population across four age groups: 0-18, 19-35, 36-50, and 51+.
+
+---
+
+#### **Data preparation**
+
+We then handles the loading and preparation of the data. The script explicitly loads the four CSV files and combines them using `rbind()` so that the two patient files are merged as one, and the two condition files are also merged as one. 
+
+```{r data_loading, echo=TRUE}
+
+patients_pg1 <- read.csv("patientsPG1.csv")
+patients_pg2 <- read.csv("patientsPG2.csv")
+
+patients <- rbind(patients_pg1, patients_pg2)
+
+conditions_pg1 <- read.csv("conditionsPG1.csv")
+conditions_pg2 <- read.csv("conditionsPG2.csv")
+
+conditions <- rbind(conditions_pg1, conditions_pg2)
+```
+
+Now, we perform the analysis using the combined data frames.
+
+The script first isolates the patient IDs associated with a "COVID" diagnosis and then uses those IDs to filter the main patient list, allowing for an accurate count by county.
+The script also uses `mutate()` to add new columns. Ages are calculated precisely using `lubridate`, and the `cut()` function is used to efficiently categorize all patients into the defined age bins.
+
+```{r analysis, echo=TRUE}
+# --- Distribution of COVID Patients by County ---
+covid_patient_ids <- conditions %>%
+  filter(grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+  distinct(PATIENT) %>%
+  pull(PATIENT)
+
+covid_by_county <- patients %>%
+  filter(Id %in% covid_patient_ids) %>%
+  count(COUNTY, name = "patient_count") %>%
+  arrange(desc(patient_count))
+
+
+# --- Distribution of Patients by Age Group ---
+today <- as.Date("2025-10-13")
+
+patients_by_age_group <- patients %>%
+  mutate(
+    BirthDate = as.Date(BIRTHDATE),
+    Age = floor(time_length(interval(BirthDate, today), "years")),
+    `Age Group` = cut(Age,
+                      breaks = c(-1, 18, 35, 50, Inf),
+                      labels = c("0-18", "19-35", "36-50", "51+"),
+                      right = TRUE)
+  ) %>%
+  count(`Age Group`, name = "patient_count")
+```
+
+#### **Visualization**
+
+After preparing the data, we create two bar plots using `ggplot2`. The first plot visualizes the distribution of COVID-19 patients by county, while the second plot shows the distribution of all patients by age group. The plots are then arranged side-by-side using the `patchwork` library for better comparison.
+
+Both distributions were visualized using bar plots instead of histograms, as bar plots are more appropriate for categorical data like counties and age groups.
+
+```{r visualization, echo=TRUE, fig.width=12, fig.height=5}
+
+# Plot 1: COVID Patients by County
+plot1 <- ggplot(covid_by_county,
+                aes(x = reorder(COUNTY, -patient_count), y = patient_count)) +
+  geom_col(fill = "skyblue") +
+  geom_text(aes(label = patient_count), vjust = -0.3) +
+  labs(title = "Distribution of COVID-19 Patients by County",
+       x = "County",
+       y = "Number of Patients") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot 2: All Patients by Age Group
+plot2 <- ggplot(patients_by_age_group,
+                aes(x = `Age Group`, y = patient_count)) +
+  geom_col(fill = "salmon") +
+  geom_text(aes(label = patient_count), vjust = -0.3) +
+  labs(title = "Distribution of All Patients by Age Group",
+       x = "Age Group",
+       y = "Number of Patients") +
+  theme_minimal(base_size = 12)
+
+# Arrange the two plots side-by-side using the patchwork library.
+plot1 + plot2
+```
+
+The bar chart on the left shows the absolute number of patients with a COVID-19 diagnosis across the different counties in Massachusetts. There is a significant geographic concentration of COVID-19 cases. Middlesex County stands out as the area with the highest number of patients, totaling 2,135. This figure is nearly double that of the next highest county, Worcester.
+
+The top eight counties collectively account for the vast majority of the COVID-19 cases in this dataset. This suggests that these are major hotspots. This information indicates that medical resources and public health interventions may need to be concentrated in these areas to effectively manage and contain the spread of the virus.
+
+The bar chart on the right provides a demographic snapshot of the entire patient population. The patient population is heavily skewed towards older adults. The 51+ age group is by far the largest demographic, with 6,496 patients. This is more than the other three age groups combined. This distribution strongly suggests that older adults are more likely to seek medical care or have more health issues requiring attention. There is a surprising spike when people reach the age of 51 compared to the 36-50 age group. This could be due to a variety of factors, including the onset of age-related health conditions that become more prevalent after 50 or that people are more proactive about their health as they age. This information means that more pressure may be placed on healthcare services that cater to older adults, including chronic disease management and preventive care.
