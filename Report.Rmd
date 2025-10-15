@@ -227,3 +227,120 @@ For male, the unique conditions points towards severe respiratory issues. The ap
 
 For female, the unique conditions points towards pregnancy-related issues. The high pressence of miscarriage is alraming. This finding emphasizes the need for special care and monitoring of pregnant patients with COVID-19, as they may face unique risks and complications.
 However, there is also the presence of normal pregnancy, which suggests that not all pregnant patiens with COVID-19 experience adverse outcomes, and that the dataset highlight that pregnant women are more likely to contracts COVID-19 compared to other demographics.
+
+### **Task 3**
+1.  Analyze factors that may influence the hospitalization rate for patients with COVID-19 focusing on Age Group and Gender.
+
+We will reuse the `patients` and `conditions` data frames created in Task 1. However, since the assignment provides two separate datasets (PG1 and PG2), we will perform the analysis separately for each dataset to see if there are any differences in hospitalization factors between them.
+
+---
+
+#### **Data preparation**
+
+Following the DRY principle, we encapsulate the analysis logic into a function called `analyze_hospitalization_factors()`. This function takes in the patient, condition, and encounter data frames along with a dataset name for labeling purposes. It performs the necessary joins and calculations to determine hospitalization rates by age group and gender.
+
+Inside the function we first filter the encounters to include only those related to COVID-19 patients. We then join this filtered data with the patient data to get demographic information. New columns for hospitalization status, age, and age group are created using `mutate()`. The function then calculates hospitalization rates by age group and gender separately, returning the results as a list.
+
+```{r data_prep_task3, echo=TRUE}
+encounters_pg1 <- read.csv("encountersPG1.csv")
+encounters_pg2 <- read.csv("encountersPG2.csv")
+
+analyze <- function(patients_df, conditions_df, encounters_df, dataset_name) {
+  covid_patient_ids <- conditions_df %>%
+    filter(grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+    distinct(PATIENT) %>%
+    pull(PATIENT)
+
+  # Join encounters with patient data for the COVID cohort
+  analysis_data <- encounters_df %>%
+    filter(PATIENT %in% covid_patient_ids) %>%
+    inner_join(patients_df, by = c("PATIENT" = "Id")) %>%
+    mutate(
+      Hospitalization =
+        if_else(
+        ENCOUNTERCLASS == "inpatient", "Hospitalized", "Outpatient"),
+      BirthDate = as.Date(BIRTHDATE),
+      Age = floor(
+                  time_length(interval(BirthDate,
+                                       as.Date("2025-10-15")), "years")),
+      `Age Group` = cut(Age,
+                        breaks = c(-1, 18, 35, 50, Inf),
+                        labels = c("0-18", "19-35", "36-50", "51+"))
+    ) %>%
+    filter(!is.na(`Age Group`), !is.na(GENDER))
+
+  # --- Analyze by Age Group ---
+  age_analysis <- analysis_data %>%
+    group_by(`Age Group`, Hospitalization) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    group_by(`Age Group`) %>%
+    mutate(rate = count / sum(count)) %>%
+    filter(Hospitalization == "Hospitalized")
+
+  # --- Analyze by Gender ---
+  gender_analysis <- analysis_data %>%
+    group_by(GENDER, Hospitalization) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    group_by(GENDER) %>%
+    mutate(rate = count / sum(count)) %>%
+    filter(Hospitalization == "Hospitalized")
+
+  (list(age = age_analysis,
+        gender = gender_analysis,
+        name = dataset_name))
+}
+
+results_pg1 <- analyze(patients_pg1,
+                       conditions_pg1,
+                       encounters_pg1, "PG1 Dataset")
+results_pg2 <- analyze(patients_pg2,
+                       conditions_pg2,
+                       encounters_pg2, "PG2 Dataset")
+```
+
+#### **Visualization**
+
+The next code block produces 4 plots to compare hospitalization rates between the two datasets (PG1 and PG2) for both age groups and genders. The plots are arranged in a 2x2 grid for easy comparison.
+
+```{r visualization_task3, echo=TRUE, fig.width=12, fig.height=8}
+# Plot for Age Group comparison
+plot_age_pg1 <- ggplot(results_pg1$age, aes(x = `Age Group`, y = rate)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = scales::percent(rate, accuracy = 0.1)), vjust = -0.3) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Hospitalization Rate by Age Group (PG1)",
+       y = "Hospitalization Rate") +
+  theme_minimal()
+
+plot_age_pg2 <- ggplot(results_pg2$age, aes(x = `Age Group`, y = rate)) +
+  geom_col(fill = "darkorange") +
+  geom_text(aes(label = scales::percent(rate, accuracy = 0.1)), vjust = -0.3) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Hospitalization Rate by Age Group (PG2)", 
+       y = "Hospitalization Rate") +
+  theme_minimal()
+
+# Plot for Gender comparison
+plot_gender_pg1 <- ggplot(results_pg1$gender, aes(x = GENDER, y = rate)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = scales::percent(rate, accuracy = 0.1)), vjust = -0.3) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Hospitalization Rate by Gender (PG1)",
+       y = "Hospitalization Rate") +
+  theme_minimal()
+
+plot_gender_pg2 <- ggplot(results_pg2$gender, aes(x = GENDER, y = rate)) +
+  geom_col(fill = "darkorange") +
+  geom_text(aes(label = scales::percent(rate, accuracy = 0.1)), vjust = -0.3) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Hospitalization Rate by Gender (PG2)",
+       y = "Hospitalization Rate") +
+  theme_minimal()
+
+(plot_age_pg1 | plot_age_pg2) / (plot_gender_pg1 | plot_gender_pg2)
+```
+
+Both PG1 and PG2 datasets shows a consistent, similar trends for both age group and gender. For the age group, the charts shows a non-linear trend. It is worth nothing that despite the age group 51+ having the highest absolute number of COVID-19 patients, they do not have the highest hospitalization rate. Instead, the 19-35 age group has the highest hospitalization rate in both datasets. The can be several reasons for the highest age group not having the highest hospitalization rate. It could be that older adults are more hesitant to seek hospital care unless absolutely necessary, or that they have better access to outpatient care and management of their conditions. The 19-35 age group may have more severe cases that require hospitalization, or they may be more likely to seek hospital care when they experience symptoms. The youngest age group has the lowest hospitalization rate.
+
+There is also not much difference between PG1 dataset and PG2 dataset when it comes to hospitalization rate by gender. The comparison shows that female have a higher hospitalization rate than men. It is highly likely that pregnancy is a contributing factor to this trend. Pregnant women may be more likely to be hospitalized for COVID-19 due to concerns about the health of both the mother and the baby.
+
