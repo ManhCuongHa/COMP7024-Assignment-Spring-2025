@@ -201,7 +201,7 @@ The next code block produces a side-by-side comparison of the top 10 conditions 
 
 The data are first prepared by renaming columns for clarity. The `cbind()` function is then used to combine the two data frames into one for side-by-side comparison. Finally, `kbl()` and `kable_styling()` are used to format the table with a caption and styling options.
 
-```{r kable_table, echo=TRUE}
+```{r visualization_task2, echo=TRUE}
 # --- Present the Gender Comparison in a Table ---
 
 male_table_data <-
@@ -241,7 +241,7 @@ Following the DRY principle, we encapsulate the analysis logic into a function c
 
 Inside the function we first filter the encounters to include only those related to COVID-19 patients. We then join this filtered data with the patient data to get demographic information. New columns for hospitalization status, age, and age group are created using `mutate()`. The function then calculates hospitalization rates by age group and gender separately, returning the results as a list.
 
-```{r data_prep_task3, echo=TRUE}
+```{r analysis_task3, echo=TRUE}
 encounters_pg1 <- read.csv("encountersPG1.csv")
 encounters_pg2 <- read.csv("encountersPG2.csv")
 
@@ -344,3 +344,178 @@ Both PG1 and PG2 datasets shows a consistent, similar trends for both age group 
 
 There is also not much difference between PG1 dataset and PG2 dataset when it comes to hospitalization rate by gender. The comparison shows that female have a higher hospitalization rate than men. It is highly likely that pregnancy is a contributing factor to this trend. Pregnant women may be more likely to be hospitalized for COVID-19 due to concerns about the health of both the mother and the baby.
 
+### **Task 4**
+1.  Investigate the characteristics of COVID-19 patients who recover compared to those who do not.
+2.  Identify factors that impact recovery outcomes and to assess if these factors are consistent across the two separate datasets (PG1 and PG2).
+
+#### **Data preparation**
+
+To handle the complexity of this task, we encapsulate the analysis logic into a function called `analyze_recovery()`. This function takes in the patient and condition data frames along with a dataset name for labeling purposes. It performs the necessary joins and calculations to determine recovery status and analyze various factors. Some notable steps in the function include:
+
+- Identifying COVID-19 conditions and defining recovery status based on the presence of a STOP date.
+- Calculating age and categorizing patients into age groups.
+- Analyzing recovery rates by age group and gender
+- Analyzing median recovery time
+- Identifying top conditions for recovered and non-recovered patients.
+
+```{r analysis_task4, echo=TRUE}
+analyze_recovery <- function(patients_df, conditions_df, dataset_name) {
+  # --- Identify COVID Conditions and Define Recovery Status ---
+  covid_conditions <- conditions_df %>%
+    filter(grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+    mutate(
+      START = as.Date(START),
+      STOP = as.Date(STOP)
+    )
+
+  patient_recovery_status <- covid_conditions %>%
+    group_by(PATIENT) %>%
+    summarise(
+      RecoveryStatus = if_else(all(!is.na(STOP)), "Recovered", "Not Recovered"),
+      IllnessDuration = if_else(RecoveryStatus == "Recovered", 
+                                as.numeric(max(STOP, na.rm = TRUE) - min(START, na.rm = TRUE)), 
+                                NA_real_)
+    )
+
+  # --- Prepare the Main Analysis Dataset ---
+  analysis_data <- patient_recovery_status %>%
+    inner_join(patients_df, by = c("PATIENT" = "Id")) %>%
+    mutate(
+      BirthDate = as.Date(BIRTHDATE),
+      Age = floor(time_length(interval(BirthDate,
+                              as.Date("2025-10-15")), "years")),
+      `Age Group` = cut(Age, 
+                        breaks = c(-1, 18, 35, 50, Inf),
+                        labels = c("0-18", "19-35", "36-50", "51+"))
+    ) %>%
+    filter(!is.na(`Age Group`), GENDER %in% c("M", "F"))
+
+  # --- Analyze Age and Gender Recovery Rates ---
+  age_recovery_rate <- analysis_data %>%
+    group_by(`Age Group`, RecoveryStatus) %>%
+    summarise(count = n(), .groups = 'drop') %>%
+    group_by(`Age Group`) %>%
+    mutate(rate = count / sum(count)) %>%
+    filter(RecoveryStatus == 'Recovered')
+
+  gender_recovery_rate <- analysis_data %>%
+    group_by(GENDER, RecoveryStatus) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    group_by(GENDER) %>%
+    mutate(rate = count / sum(count)) %>%
+    filter(RecoveryStatus == "Recovered")
+
+  # --- Analyze Timeline (Median Recovery Time) ---
+  median_recovery_time <- analysis_data %>%
+    filter(RecoveryStatus == "Recovered") %>%
+    summarise(MedianDays = median(IllnessDuration, na.rm = TRUE))
+
+  # --- Analyze Top Conditions for Each Group ---
+  all_patient_conditions <- conditions_df %>%
+    inner_join(patient_recovery_status, by = "PATIENT")
+
+  top_conditions_recovered <- all_patient_conditions %>%
+    filter(RecoveryStatus == "Recovered",
+           !grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+    count(DESCRIPTION, sort = TRUE, name = "Count") %>%
+    head(5) %>%
+    rename(`Recovered Condition` = DESCRIPTION)
+
+  top_conditions_not_recovered <- all_patient_conditions %>%
+    filter(RecoveryStatus == "Not Recovered",
+           !grepl("COVID", DESCRIPTION, ignore.case = TRUE)) %>%
+    count(DESCRIPTION, sort = TRUE, name = "Count") %>%
+    head(5) %>%
+    rename(`Not Recovered Condition` = DESCRIPTION, `NR_Count` = Count)
+
+  df_recovered <-
+    top_conditions_recovered %>% mutate(row_num = row_number())
+  df_not_recovered <-
+    top_conditions_not_recovered %>% mutate(row_num = row_number())
+  symptom_comparison <-
+    full_join(df_recovered, df_not_recovered, by = "row_num") %>%
+    select(-row_num)
+
+  list(
+    age_rate = age_recovery_rate,
+    gender_rate = gender_recovery_rate,
+    timeline = median_recovery_time,
+    symptoms = symptom_comparison,
+    name = dataset_name
+  )
+}
+```
+
+#### **Visualization**
+
+We then call the `analyze_recovery()` function for both datasets and store the results. We also produce 4 plots to compare recovery rates between the two datasets (PG1 and PG2) for both age groups and genders similar to Task 3.
+
+```{r visualization_task4, echo=TRUE}
+results_pg1 <- analyze_recovery(patients_pg1, conditions_pg1, "PG1 Dataset")
+results_pg2 <- analyze_recovery(patients_pg2, conditions_pg2, "PG2 Dataset")
+
+plot_age_pg1 <- ggplot(results_pg1$age_rate, aes(x = `Age Group`, y = rate)) +
+  geom_col(fill = "forestgreen") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Recovery Rate by Age Group (PG1)", y = "Recovery Rate") +
+  theme_minimal()
+
+plot_age_pg2 <- ggplot(results_pg2$age_rate, aes(x = `Age Group`, y = rate)) +
+  geom_col(fill = "orchid4") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Recovery Rate by Age Group (PG2)", y = "Recovery Rate") +
+  theme_minimal()
+
+plot_gender_pg1 <- ggplot(results_pg1$gender_rate, aes(x = GENDER, y = rate)) +
+  geom_col(fill = "forestgreen") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Recovery Rate by Gender (PG1)", y = "Recovery Rate") +
+  theme_minimal()
+
+plot_gender_pg2 <- ggplot(results_pg2$gender_rate, aes(x = GENDER, y = rate)) +
+  geom_col(fill = "orchid4") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Recovery Rate by Gender (PG2)", y = "Recovery Rate") +
+  theme_minimal()
+
+(plot_age_pg1 | plot_age_pg2) / (plot_gender_pg1 | plot_gender_pg2)
+```
+
+The charts above shows that there is an exceptionally high recovery rate across all age groups in both datasets. The 0-18 age group has the highest recovery rate, followed closely by the 19-35 and 36-50 age groups. The 51+ age group has the lowest recovery rate, this is consistent with the general understanding that older adults are more vulnerable to severe outcomes from COVID-19. Age appears to be a significant factor in recovery, with younger patients recovering at higher rates.
+
+Furthermore, the recovery rates of female patients are higher than those of male. This could be due to a variety of biological, behavioral, and social factors. For instance, there is some evidence to suggest that hormonal differences may influence immune responses to infections. Additionally, women may be more proactive in seeking medical care and adhering to treatment regimens.
+
+Both datasets show similar trends in both of these comparisons.
+
+```{r recovery_times, echo=TRUE}
+cat("PG1 Dataset:", results_pg1$timeline$MedianDays, "days\n")
+cat("PG2 Dataset:", results_pg2$timeline$MedianDays, "days\n\n")
+```
+
+Both datasets show a median recovery time of 22 days for patients who recover from COVID-19. This consistency suggests that, despite any differences in patient demographics or healthcare settings between the two datasets, the typical duration of illness remains similar.
+
+``` {r top_conditions_pg1, echo=TRUE}
+results_pg1$symptoms %>%
+  kbl(caption = "Top Conditions for Recovered vs.
+   Not Recovered Patients (PG1)") %>%
+  kable_styling(full_width = FALSE, position = "center")
+```
+
+``` {r top_conditions_pg2, echo=TRUE}
+results_pg2$symptoms %>%
+  kbl(caption = "Top Conditions for Recovered vs.
+   Not Recovered Patients (PG2)") %>%
+  kable_styling(full_width = FALSE, position = "center")
+```
+
+Compared to PG2, PG1 shows a higher count for both the recovered conditions and non-recovered conditions. Fever and Cough are the most common conditions among recovered patients in both datasets, indicating that these symptoms are prevalent but not necessarily indicative of poor outcomes. Fatigue and Loss of taste are also common among recovered patients.
+
+PG2 and PG1 shows the exact same rankings for the not recovered conditions. Hypoxemia and Pneunomia are the most common conditions among non-recovered patients in both datasets, highlighting the severity of respiratory complications in COVID-19 outcomes. Acute respiratory failure, Respiratory distress and sepsis caused by virus are also prevalent among non-recovered patients, underscoring the critical nature of these conditions in determining patient outcomes.
+
+This list describes a patient whose body is failing to cope with the viral infection. The conditions point directly to severe lung damage and a systemic inflammatory crisis, which are the primary drivers of mortality and long-term illness from COVID-19. These are critical medical emergencies that require intensive care.
+
+Compared to PG1, Fatigue have a higher count than body mass index over 30 for the recovered conditions in PG2. But aside from that, both datasets show the exact same rankings for the recovered conditions as well.
+
+Compared to the recovered conditions, the not recovered conditions tend to be more severe and life-threatening. This contrast highlights the importance of monitoring and managing respiratory symptoms in COVID-19 patients to improve recovery outcomes. Recovered conditions tend to be more general symptoms of viral infections.
+
+Recovery is associated with experiencing the symptoms of the virus, while non-recovery is defined by the development of severe complications.
